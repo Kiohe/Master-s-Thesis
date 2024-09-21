@@ -1,0 +1,586 @@
+---
+title: "Basic discriptive statistics"
+author: "Kyohei Sato"
+date: "2024-09-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+pacman::p_load(tidyverse, here, DT, outliers, ggridges)
+
+dat_basic <- 
+  read_csv(here::here("/masters_thesis/data/panel/dat_basic.csv"))
+
+## Outliers
+dat_basic <- 
+  dat_basic |> 
+  filter(wage_per_hour > 700, wage_per_hour < 10000)
+
+```
+
+
+## Contarct Type
+
+```{r CT, echo=FALSE, message=FALSE}
+
+hist1 <- ggplot(dat_basic, aes(x = contract_type))+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(0,6,1))
+
+hist1
+
+```
+
+## Education {.tabset}
+
+### Regular
+```{r Educ reg, echo=FALSE, message=FALSE}
+
+dat_regular <- 
+  dat_basic |> 
+  filter(regular == 1)
+
+hist2 <- ggplot(dat_regular, aes(x = educ))+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(0,8,1))
+
+hist2
+
+```
+
+### Part-Time
+```{r educ PT, echo=FALSE}
+
+dat_pt <- 
+  dat_basic |> 
+  filter(part_time == 1)
+
+hist3 <- ggplot(dat_pt, aes(x = educ))+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(0,8,1))
+
+hist3
+
+```
+
+### Dispatched
+```{r educ disp, echo=FALSE}
+
+dat_disp <- 
+  dat_basic |> 
+  filter(dispatched == 1)
+
+hist4 <- ggplot(dat_disp, aes(x = educ))+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(0,8,1))
+
+hist4
+
+```
+
+### Fixed-term
+```{r FT, echo=FALSE}
+
+dat_ft <- 
+  dat_basic |> 
+  filter(fixed_term == 1)
+
+hist5 <- ggplot(dat_ft, aes(x = educ))+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(0,8,1))
+
+hist5
+```
+
+### Shokutaku
+```{r sho, echo=FALSE}
+dat_sho <- 
+  dat_basic |> 
+  filter(shokutaku == 1)
+
+hist6 <- ggplot(dat_sho, aes(x = educ))+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(0,8,1))
+
+hist6
+```
+
+
+## Wage per hour {.tabset}
+How can we deal with outliers?
+
+### 4 in 1
+```{r wage 4 in 1, echo=FALSE}
+p <- ggplot(data = dat_basic,
+mapping = aes(x = logwage, y = factor(contract_type))) +
+geom_density_ridges() +
+labs(x = "log wage", y = NULL)
+
+p
+```
+
+
+### Regular
+```{r regwage, echo=FALSE, message=FALSE}
+## too long tail
+
+hist7 <- ggplot(dat_regular, aes(x = logwage))+
+  geom_histogram(bins = 50)
+  
+
+hist7
+
+```
+
+### Part-Time
+```{r ptwage, echo=FALSE}
+## too long tail
+
+hist8 <- ggplot(dat_pt, aes(x = logwage))+
+  geom_histogram(bins = 50)
+  
+
+hist8
+
+```
+
+### Dispatched
+```{r dispwage, echo=FALSE}
+## too long tail
+
+hist9 <- ggplot(dat_disp, aes(x = logwage))+
+  geom_histogram(bins = 50)
+  
+
+hist9
+
+```
+
+### Fixed-Time
+```{r ftwage, echo=FALSE}
+## too long tail
+
+hist10 <- ggplot(dat_ft, aes(x = logwage))+
+  geom_histogram(bins = 50)
+  
+
+hist10
+
+```
+
+### Shokutaku
+```{r showage, echo=FALSE}
+## too long tail
+
+hist11 <- ggplot(dat_sho, aes(x = logwage))+
+  geom_histogram(bins = 50)
+  
+hist11
+
+```
+
+## OJT {.tabset}
+
+### ALL
+```{r OJT1, echo=FALSE, message=FALSE}
+
+dat_train <- 
+  dat_basic |> 
+  group_by(contract_type, year) |> 
+  summarise(mean_OJT = mean(d_OJT)) |> 
+  filter(contract_type < 6)
+
+line_train <- ggplot(dat_train, aes(x = year, y = mean_OJT, color = as.factor(contract_type))) +
+  geom_line() + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Proportion of OJT taker",
+       color = "Contract Type") + 
+  theme_minimal()  
+
+line_train
+
+```
+
+### Regular vs Dispatched
+```{r OJT2, echo=FALSE}
+
+dat_dif_OJT <- 
+  dat_train |>
+  filter(contract_type %in% c(1,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = mean_OJT,
+              names_prefix = "contract_type_") |> 
+  mutate(OJT_diff = contract_type_1 - contract_type_3, type = "Regular vs Dispatched")
+
+line_OJT_diff1 <- ggplot(dat_dif_OJT, aes(x = year, y = OJT_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in proportion of OJT taker",
+       color = "Difference in Propottion of OJT taker b/w regular and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_OJT_diff1
+
+```
+
+### Part-Time vs Dispatched
+```{r OJT3, echo=FALSE}
+
+dat_dif_OJT2 <- 
+  dat_train |>
+  filter(contract_type %in% c(2,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = mean_OJT,
+              names_prefix = "contract_type_") |> 
+  mutate(OJT_diff = contract_type_2 - contract_type_3, type = "Part-time vs Dispatched")
+
+line_OJT_diff2 <- ggplot(dat_dif_OJT2, aes(x = year, y = OJT_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in proportion of OJT taker",
+       color = "Difference in Propottion of OJT taker b/w part-time and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_OJT_diff2
+
+```
+
+### Fixed-term vs Dispatched
+```{r OJT4, echo=FALSE}
+
+dat_dif_OJT3 <- 
+  dat_train |>
+  filter(contract_type %in% c(4,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = mean_OJT,
+              names_prefix = "contract_type_") |> 
+  mutate(OJT_diff = contract_type_4 - contract_type_3, type = "Fixed-tern vs Dispatched")
+
+line_OJT_diff3 <- ggplot(dat_dif_OJT3, aes(x = year, y = OJT_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in proportion of OJT taker",
+       color = "Difference in Propottion of OJT taker b/w fixed-term and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_OJT_diff3
+
+```
+
+### Shokutaku vs Dispatched
+```{r OJT5, echo=FALSE}
+
+dat_dif_OJT4 <- 
+  dat_train |>
+  filter(contract_type %in% c(5,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = mean_OJT,
+              names_prefix = "contract_type_") |> 
+  mutate(OJT_diff = contract_type_5 - contract_type_3, type = "Shokutaku vs Dispatched")
+
+line_OJT_diff4 <- ggplot(dat_dif_OJT4, aes(x = year, y = OJT_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in proportion of OJT taker",
+       color = "Difference in Propottion of OJT taker b/w Shokutaku and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_OJT_diff4
+
+```
+
+### Difference in OJT taker (4 in 1)
+```{r OJT6, echo=FALSE}
+
+combined_data <- bind_rows(dat_dif_OJT, dat_dif_OJT2, dat_dif_OJT3, dat_dif_OJT4) |> 
+  select(year, OJT_diff, type)
+
+difference_in_OJT_growth <- 
+  ggplot(combined_data, aes(x = year, y = OJT_diff, color = type)) +
+  geom_line() + 
+  geom_point() +
+  geom_vline(xintercept = 2020, color = "red", linetype = "dashed") +
+  labs(title = "OJTの経年変化",
+       x = "Year",
+       y = "Difference in proportion of OJT takers",
+       color = "Comparison") +  
+  theme_minimal()
+
+difference_in_OJT_growth 
+
+```
+
+
+## OFF_JT {.tabset}
+
+### ALL
+```{r OFF1, echo=FALSE, message=FALSE}
+
+dat_OFF <- 
+  dat_basic |> 
+  group_by(contract_type, year) |> 
+  summarise(mean_OFF = mean(d_OFF_JT)) |> 
+  filter(contract_type < 6)
+
+line_OFF <- ggplot(dat_OFF, aes(x = year, y = mean_OFF, color = as.factor(contract_type))) +
+  geom_line() + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Proportion of OFF-JT taker",
+       color = "Contract Type") + 
+  theme_minimal()  
+
+line_OFF
+
+```
+
+### Regular vs Dispatched
+```{r OFF2, echo=FALSE}
+
+dat_dif_OFF <- 
+  dat_OFF |>
+  filter(contract_type %in% c(1,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = mean_OFF,
+              names_prefix = "contract_type_") |> 
+  mutate(OFF_diff = contract_type_1 - contract_type_3, type = "Regular vs Dispatched")
+
+line_OFF_diff1 <- ggplot(dat_dif_OFF, aes(x = year, y = OFF_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in proportion of OFF-JT taker",
+       color = "Difference in Propottion of OFF-JT taker b/w regular and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_OJT_diff1
+
+```
+
+### Part-Time vs Dispatched
+```{r OFF3, echo=FALSE}
+
+dat_dif_OFF2 <- 
+  dat_OFF |>
+  filter(contract_type %in% c(2,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = mean_OFF,
+              names_prefix = "contract_type_") |> 
+  mutate(OFF_diff = contract_type_2 - contract_type_3, type = "Part-time vs Dispatched")
+
+line_OFF_diff2 <- ggplot(dat_dif_OFF2, aes(x = year, y = OFF_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in proportion of OFF-JT taker",
+       color = "Difference in Propottion of OFF-JT taker b/w part-time and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_OFF_diff2
+
+```
+
+### Fixed-term vs Dispatched
+```{r OFF4, echo=FALSE}
+
+dat_dif_OFF3 <- 
+  dat_OFF |>
+  filter(contract_type %in% c(4,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = mean_OFF,
+              names_prefix = "contract_type_") |> 
+  mutate(OFF_diff = contract_type_4 - contract_type_3, type = "Fixed-tern vs Dispatched")
+
+line_OFF_diff3 <- ggplot(dat_dif_OFF3, aes(x = year, y = OFF_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in proportion of OFF-JT taker",
+       color = "Difference in Propottion of OFF-JT taker b/w fixed-term and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_OFF_diff3
+
+```
+
+### Shokutaku vs Dispatched
+```{r OFF5, echo=FALSE}
+
+dat_dif_OFF4 <- 
+  dat_OFF |>
+  filter(contract_type %in% c(5,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = mean_OFF,
+              names_prefix = "contract_type_") |> 
+  mutate(OFF_diff = contract_type_5 - contract_type_3, type = "Shokutaku vs Dispatched")
+
+line_OFF_diff4 <- ggplot(dat_dif_OFF4, aes(x = year, y = OFF_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in proportion of OFF-JT taker",
+       color = "Difference in Propottion of OFF-JT taker b/w Shokutaku and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_OFF_diff4
+
+```
+
+### Difference in OFF-JT taker (4 in 1)
+```{r OFF6, echo=FALSE}
+
+combined_data <- bind_rows(dat_dif_OFF, dat_dif_OFF2, dat_dif_OFF3, dat_dif_OFF4) |> 
+  select(year, OFF_diff, type)
+
+difference_in_OFF_growth <- 
+  ggplot(combined_data, aes(x = year, y = OFF_diff, color = type)) +
+  geom_line() + 
+  geom_point() +
+  geom_vline(xintercept = 2020, color = "red", linetype = "dashed") +
+  labs(title = "OFF-JTの経年変化",
+       x = "Year",
+       y = "Difference in proportion of OFF-JT takers",
+       color = "Comparison") +  
+  theme_minimal()
+
+difference_in_OFF_growth 
+
+```
+
+## Change by Year{.tabset}
+
+### wage change by contract type
+```{r change in wage, echo=FALSE, message=FALSE}
+
+dat_wage <- 
+  dat_basic |> 
+  group_by(contract_type, year) |>
+  summarise(meanwage = mean(logwage, na.rm = TRUE)) |> 
+  filter(contract_type < 6) 
+  
+line_wage <- ggplot(dat_wage, aes(x = year, y = meanwage, color = as.factor(contract_type))) +
+  geom_line() + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Mean Wage (log)",
+       color = "Contract Type") + 
+  theme_minimal()  
+
+line_wage
+
+```
+
+### Regular vs Dispatched
+```{r diff in wage r and d, echo=FALSE}
+  
+dat_dif <- 
+  dat_wage |>
+  filter(contract_type %in% c(1,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = meanwage,
+              names_prefix = "contract_type_") |> 
+  mutate(wage_diff = contract_type_1 - contract_type_3, type = "Regular vs Dispatched")
+
+line_wage_diff1 <- ggplot(dat_dif, aes(x = year, y = wage_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in Mean Wage (log)",
+       color = "Wage Difference b/w regular and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_wage_diff1
+
+```
+
+### Part-time vs Dispatched
+```{r diff in wage p and d, echo=FALSE}
+  
+dat_dif2 <- 
+  dat_wage |>
+  filter(contract_type %in% c(2,3)) |> 
+  pivot_wider(names_from = contract_type, values_from = meanwage,
+              names_prefix = "contract_type_") |> 
+  mutate(wage_diff = contract_type_2 - contract_type_3, type = "Part-time vs Dispatched")
+
+line_wage_diff2 <- ggplot(dat_dif2, aes(x = year, y = wage_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in Mean Wage (log)",
+       color = "Wage Difference b/w part-time and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_wage_diff2
+
+```
+
+### Fixed term vs Dispatched
+```{r diff in wage f and d, echo=FALSE}
+  
+dat_dif3 <- 
+  dat_wage |>
+  filter(contract_type %in% c(3, 4)) |> 
+  pivot_wider(names_from = contract_type, values_from = meanwage,
+              names_prefix = "contract_type_") |> 
+  mutate(wage_diff = contract_type_4 - contract_type_3, type = "Fixed-term vs Dispatched")
+
+line_wage_diff3 <- ggplot(dat_dif3, aes(x = year, y = wage_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in Mean Wage (log)",
+       color = "Wage Difference b/w fixed-term and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_wage_diff3
+```
+
+### Shokutaku vs Dispatched
+```{r diff in wage s and d, echo=FALSE}
+  
+dat_dif4 <- 
+  dat_wage |>
+  filter(contract_type %in% c(3, 5)) |> 
+  pivot_wider(names_from = contract_type, values_from = meanwage,
+              names_prefix = "contract_type_") |> 
+  mutate(wage_diff = contract_type_5 - contract_type_3, type = "Shokutaku vs Dispatched")
+
+line_wage_diff4 <- ggplot(dat_dif4, aes(x = year, y = wage_diff)) +
+  geom_line(color = "blue") + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Difference in Mean Wage (log)",
+       color = "Wage Difference b/w shokutaku and dispatched") + 
+  geom_vline(xintercept  = 2020, color = "red", linetype = "dashed") +
+  theme_minimal()  
+
+line_wage_diff4
+```
+
+### Difference in wage growth (4 in 1)
+```{r diff in wage growth, echo=FALSE}
+  
+combined_data <- bind_rows(dat_dif, dat_dif2, dat_dif3, dat_dif4) |> 
+  select(year, wage_diff, type)
+
+difference_in_wage_growth <- 
+  ggplot(combined_data, aes(x = year, y = wage_diff, color = type)) +
+  geom_line() + 
+  geom_point() +
+  geom_vline(xintercept = 2020, color = "red", linetype = "dashed") +
+  labs(title = "賃金差の経年変化",
+       x = "Year",
+       y = "Wage Difference",
+       color = "Comparison") +  
+  theme_minimal()
+
+difference_in_wage_growth 
+```

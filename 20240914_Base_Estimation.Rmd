@@ -1,0 +1,330 @@
+---
+title: "Basic Estimations"
+author: "Kyohei Sato"
+date: "2024-09-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+pacman::p_load(tidyverse, here, DT, outliers, ggridges, estimatr, fixest)
+
+dat_basic <- 
+  read_csv(here::here("/masters_thesis/data/panel/dat_basic.csv"))
+
+## Data Processing
+dat_basic <- 
+  dat_basic |> 
+  filter(wage_per_hour > 700, wage_per_hour < 10000) |> 
+  mutate(treat = if_else(year >= 2020, 1, 0))
+
+```
+
+
+## Estimated Model
+
+- Consider the situation that the timing of policy intervention across individuals are equal.
+- $y_{i,t}$ is the outcome variable of worker $i$, in year $t$. $T^*$ is the year of treatment and $\beta_{T^* -1}$ is normalised to zero. 
+
+$$
+\begin{equation*}
+y_{i,t} = \alpha_i + \delta_t + \sum_{r \neq T^* -1} \mathbb{1}(t = r) Treated_i \times \beta_r + \epsilon_{i, t}
+\end{equation*}
+$$
+
+## Wage Change wo control {.tabset}
+### Regular vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+dat_reg_disp <- dat_basic |> filter(regular == 1 | dispatched == 1)
+
+reg1 <- 
+  feols(logwage~ i(year,dispatched, ref=2019) | ID+year, data = dat_reg_disp)
+
+iplot(reg1)
+
+```
+
+### Part-time vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+dat_pt_disp <- dat_basic |> filter(part_time == 1 | dispatched == 1)
+
+reg2 <- 
+  feols(logwage~ i(year,dispatched, ref=2019) | ID+year, data = dat_pt_disp)
+
+iplot(reg2)
+
+```
+
+### Fixed-term vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+dat_ft_disp <- dat_basic |> filter(fixed_term == 1 | dispatched == 1)
+
+reg3 <- 
+  feols(logwage~ i(year,dispatched, ref=2019) | ID+year, data = dat_ft_disp)
+
+iplot(reg3)
+
+```
+
+### Shokutaku vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+dat_sho_disp <- dat_basic |> filter(shokutaku == 1 | dispatched == 1)
+
+reg4 <- 
+  feols(logwage~ i(year,dispatched, ref=2019) | ID+year, data = dat_sho_disp)
+
+iplot(reg4)
+
+```
+
+## Wage Change controlling born year and college education {.tabset}
+### Regular vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg5 <- 
+  feols(logwage~ i(year,dispatched, ref=2019) + 
+          edu_cg + born_year| 
+          ID+year
+        , data = dat_reg_disp)
+
+iplot(reg5)
+
+```
+
+### Part-time vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg6 <- 
+  feols(logwage~ i(year,dispatched, ref=2019) +
+          ID+year|
+          ID+year,
+        data = dat_pt_disp)
+
+iplot(reg6)
+
+```
+
+### Fixed-term vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg7 <- 
+  feols(logwage~ i(year,dispatched, ref=2019) +
+          ID+year|
+          ID+year,
+        data = dat_ft_disp)
+
+iplot(reg7)
+
+```
+
+### Shokutaku vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg8 <- 
+  feols(logwage~ i(year,dispatched, ref=2019) +
+          ID+year|
+          ID+year,
+        data = dat_sho_disp)
+
+iplot(reg8)
+
+```
+
+
+
+
+
+## OJT Change wo control {.tabset}
+### Regular vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg9 <- 
+  feols(d_OJT~ i(year,dispatched, ref=2019) | ID+year, data = dat_reg_disp)
+
+iplot(reg9)
+
+```
+
+### Part-time vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg10 <- 
+  feols(d_OJT~ i(year,dispatched, ref=2019) | ID+year, data = dat_pt_disp)
+
+iplot(reg10)
+
+```
+
+### Fixed-term vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg11 <- 
+  feols(d_OJT~ i(year,dispatched, ref=2019) | ID+year, data = dat_ft_disp)
+
+iplot(reg11)
+
+```
+
+### Shokutaku vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg12 <- 
+  feols(d_OJT~ i(year,dispatched, ref=2019) | ID+year, data = dat_sho_disp)
+
+iplot(reg12)
+
+```
+
+
+## Wage Change controlling born year and college education {.tabset}
+### Regular vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg13 <- 
+  feols(d_OJT~ i(year,dispatched, ref=2019) + 
+          edu_cg + born_year| 
+          ID+year
+        , data = dat_reg_disp)
+
+iplot(reg13)
+
+```
+
+### Part-time vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg14 <- 
+  feols(d_OJT~ i(year,dispatched, ref=2019) +
+          ID+year|
+          ID+year,
+        data = dat_pt_disp)
+
+iplot(reg14)
+
+```
+
+### Fixed-term vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg15 <- 
+  feols(d_OJT~ i(year,dispatched, ref=2019) +
+          ID+year|
+          ID+year,
+        data = dat_ft_disp)
+
+iplot(reg15)
+
+```
+
+### Shokutaku vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg16 <- 
+  feols(d_OJT~ i(year,dispatched, ref=2019) +
+          ID+year|
+          ID+year,
+        data = dat_sho_disp)
+
+iplot(reg16)
+
+```
+
+
+
+## OFF-JT Change wo control {.tabset}
+### Regular vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg17 <- 
+  feols(d_OFF_JT~ i(year,dispatched, ref=2019) | ID+year, data = dat_reg_disp)
+
+iplot(reg17)
+
+```
+
+### Part-time vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg18 <- 
+  feols(d_OFF_JT~ i(year,dispatched, ref=2019) | ID+year, data = dat_pt_disp)
+
+iplot(reg18)
+
+```
+
+### Fixed-term vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg19 <- 
+  feols(d_OFF_JT~ i(year,dispatched, ref=2019) | ID+year, data = dat_ft_disp)
+
+iplot(reg19)
+
+```
+
+### Shokutaku vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg20 <- 
+  feols(d_OFF_JT~ i(year,dispatched, ref=2019) | ID+year, data = dat_sho_disp)
+
+iplot(reg20)
+
+```
+
+
+## Wage Change controlling born year and college education {.tabset}
+### Regular vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg21 <- 
+  feols(d_OFF_JT~ i(year,dispatched, ref=2019) + 
+          edu_cg + born_year| 
+          ID+year
+        , data = dat_reg_disp)
+
+iplot(reg13)
+
+```
+
+### Part-time vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg22 <- 
+  feols(d_OFF_JT~ i(year,dispatched, ref=2019) +
+          ID+year|
+          ID+year,
+        data = dat_pt_disp)
+
+iplot(reg22)
+
+```
+
+### Fixed-term vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg23 <- 
+  feols(d_OFF_JT~ i(year,dispatched, ref=2019) +
+          ID+year|
+          ID+year,
+        data = dat_ft_disp)
+
+iplot(reg23)
+
+```
+
+### Shokutaku vs Dispatched
+```{r, echo=FALSE, message=FALSE}
+
+reg24 <- 
+  feols(d_OFF_JT~ i(year,dispatched, ref=2019) +
+          ID+year|
+          ID+year,
+        data = dat_sho_disp)
+
+iplot(reg24)
+
+```

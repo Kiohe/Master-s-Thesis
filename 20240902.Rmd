@@ -1,0 +1,104 @@
+---
+title: "MTG Septamber 2nd"
+author: "Kyohei Sato"
+date: "2024-09-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+pacman::p_load(tidyverse, here, DT)
+
+dat_basic <- 
+  read_csv(here::here("/masters_thesis/data/panel/dat_panel_basic.csv"))
+```
+
+## Sample Size for each contract type (for each year)
+
+```{r sample, echo=FALSE, message=FALSE}
+
+summary_table <- dat_basic %>%
+  group_by(year, contract_type) %>% 
+  summarise(unique_count = n_distinct(ID)) %>%  
+  ungroup() %>% 
+  mutate(contract_type = 
+           recode(contract_type, 
+                  "1" = "regular",
+                  "2" = "part_time",
+                  "3" = "haken",
+                  "4" = "keiyaku",
+                  "5" = "syokutaku",
+                  "6" = "others"))
+
+datatable(summary_table, 
+          options = list(pageLength = 10, 
+                         autoWidth = TRUE, 
+                         dom = 'Bfrtip', 
+                         buttons = c('copy', 
+                                     'csv',
+                                     'excel',
+                                     'pdf',
+                                     'print')),
+          rownames = FALSE)
+
+```
+
+## Sample Size for each contract type (year pooled)
+
+```{r pressure, echo=FALSE}
+
+summary_table_pooled <- dat_basic %>%
+  group_by(contract_type) %>%  
+  summarise(unique_count = n_distinct(ID)) %>%  
+  ungroup() %>% 
+  mutate(contract_type = recode(contract_type, 
+                  "1" = "regular",
+                  "2" = "part_time",
+                  "3" = "haken",
+                  "4" = "keiyaku",
+                  "5" = "syokutaku",
+                  "6" = "others"))
+
+# DTパッケージで表を表示
+datatable(summary_table_pooled, 
+          options = list(pageLength = 10, 
+                         autoWidth = TRUE, 
+                         dom = 'Bfrtip', 
+                         buttons = c('copy',
+                                     'csv',
+                                     'excel',
+                                     'pdf',
+                                     'print')),
+          rownames = FALSE)
+```
+
+## Descriptive Statistics
+```{r ds, echo=FALSE}
+
+summary_stats <- dat_basic %>%
+  group_by(contract_type) %>%  
+  summarise(
+    wage_mean = round(mean(annual_wage_main, na.rm = TRUE), 3),      
+    wage_median = round(median(annual_wage_main, na.rm = TRUE), 3),  
+    wage_sd = round(sd(annual_wage_main, na.rm = TRUE), 3),          
+    educ_mean = round(mean(educ, na.rm = TRUE), 3),      
+    educ_median = round(median(educ, na.rm = TRUE), 3),  
+    educ_sd = round(sd(educ, na.rm = TRUE), 3)           
+  ) %>%
+  mutate(contract_type = recode(contract_type, 
+                  "1" = "regular",
+                  "2" = "part_time",
+                  "3" = "haken",
+                  "4" = "keiyaku",
+                  "5" = "syokutaku",
+                  "6" = "others"))  
+
+# DTパッケージで表を表示
+datatable(summary_stats, 
+          options = list(pageLength = 10, 
+                         autoWidth = TRUE, 
+                         dom = 'Bfrtip', 
+                         buttons = c('copy', 'csv', 'excel', 'pdf', 'print')),
+          rownames = FALSE)
+
+```
+
