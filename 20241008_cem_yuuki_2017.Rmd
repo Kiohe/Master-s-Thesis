@@ -1,0 +1,534 @@
+---
+title: "Coarsened Exact Matching (有期雇用をtreatとして)(2017)"
+author: "Kyohei Sato"
+date: "2024-10-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+set.seed(1234)
+
+# Install packages
+
+if (!require(pacman)) install.packages("pacman")
+pacman::p_load(
+  cem, cobalt, fixest, gtExtras, here, kableExtra, knitr,
+  labelled, RColorBrewer, rlist, scales, tidyverse
+)
+pacman::p_load_gh("rstudio/gt")
+
+# Read and clean data
+
+df_basic <- 
+  read_csv(here::here("/masters_thesis/data/panel/dat_basic.csv")) |> 
+  filter(wage_per_hour > 700, wage_per_hour < 10000)
+
+df_cov <-
+  read_csv(here::here("/masters_thesis/data/panel/dat_panel_cov.csv"))
+
+# Prepare data for analysis
+## Filtering regular and haken
+df_full <- df_basic |> 
+  left_join(df_cov, by = c("ID", "year"))|> 
+  filter(firm_size <= 12) |> 
+  mutate(post_treat = if_else(year >= 2020, 1, 0),
+         age_10s = age %/% 10,
+         d_position = if_else(position <= 7, 1, 0),
+         small_firm = if_else(firm_size <= 7, 1, 0),
+         d_term_fixed = if_else(d_term_fixed == 1, 1, 0)
+         ) 
+
+## Filtering IDs whose contract type is consistent during panel survey
+# filter_by_employment <- function(df) {
+#   valid_ids <- df |> 
+#     select(ID, year, regular, dispatched) |> 
+#     pivot_wider(
+#       names_from = year,
+#       values_from = c(regular, dispatched)
+#     ) |>
+#     filter(
+#       if_all(starts_with("regular"), ~ .x == 1) | 
+#       if_all(starts_with("dispatched"), ~ .x == 1) 
+#     ) |> 
+#     pull(ID)
+#   
+#   df |> 
+#     filter(ID %in% valid_ids)
+# }
+# 
+# df_full <- 
+#   filter_by_employment(df_full)
+
+```
+
+# Coarsened Exact Matching
+
+-   CEM
+-   マッチングに使用する年度
+    -   2019年度(政策施行前年)
+    -   2017年度(政策公布前年)
+-   マッチ要素
+    -   基本情報5項目
+        -   性別
+        -   年齢：10才きざみ
+        -   学歴：大卒以上 / それ以外
+        -   役職：何かの役職についているか
+        -   企業の規模：従業員規模が300人以上かどうか
+        -   主な稼ぎ手が自分か
+    -   結婚の有無
+    -   子どもの有無
+    -   産業大分類
+
+**パターン一覧**
+
+```{r table, echo=FALSE}
+
+tribble(
+  ~` `, ~`(1)`, ~`(2)`, ~`(3)`, ~`(4)`,
+  "基本情報（6項目）",     "X", "X", "X","X", 
+  "結婚の有無",            " ", "X", "X","X",
+  "子どもの有無",          " ", " ", "X","X",
+  "産業大分類",　　" "," ", " ", "X"
+) |>
+  kable(format = "html", align = "lcccc", escape = FALSE) |> 
+  kable_styling(full_width = TRUE)
+
+```
+
+```{r matching, include=FALSE}
+
+conduct_matching <- function(base_year, trt_type) {
+  trt_vars <- list_trt_vars[[str_c("type", trt_type)]] %>%
+    append(list_trt_vars$common)
+
+  # base_yearのデータをフィルタリング
+  df_input <- df_full |> filter(year == base_year)
+  
+  # マッチング用データを作成
+  df_for_matching <- df_input |> 
+    select(ID, d_term_fixed, all_of(trt_vars)) |> 
+    na.omit()
+
+  # CEMマッチングを実行
+  matching <- cem(
+    treatment = "d_term_fixed", 
+    data = df_for_matching,
+    drop = "ID",
+    cutpoints = list(
+      age_10s = c(0, 1.5, 2.5, 3.5, 4.5, 5.5),
+      edu_cg = c(0, 0.5),
+      d_marriage = c(0, 0.5),
+      d_child = c(0, 0.5),
+      d_position = c(0, 0.5),
+      small_firm = c(0, 0.5),
+      d_main_earner = c(0, 0.5),
+      corse_industry = c(1.5, 2.5, 3.5, 4.5, 6.5, 7.5, 8.5, 9.5, 
+                         10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5,
+                         17.5, 18.5, 19.5)
+    ),
+    grouping = list(sex = list(0, 1)), 
+    keep.all = TRUE,
+    k2k = TRUE
+  )
+
+  # base_yearでマッチングされたIDを抽出
+  matched_ids <- df_for_matching$ID[matching$matched]
+
+  # 全ての年のデータにマッチングされたIDを適用する
+  df_output <- df_full |> 
+    mutate(
+      matched = ID %in% matched_ids,  # 全年に対してmatchedを割り当てる
+      .after = d_term_fixed
+    )
+
+  return(list(
+    matching = unclass(matching),
+    df = df_output
+  ))
+}
+
+
+tbl_matched_n <- function(base_year, trt_type, sex) {
+  
+  tbl <- list_matching |> 
+    chuck(as.character(base_year), trt_type, "df") |>
+    filter(year == base_year & sex == sex) |> 
+    count(
+      d_term_fixed = if_else(d_term_fixed == 1, "FixedTerm", "Regular"),  # ラベルを付ける
+      matched = if_else(matched, "Matched", "Unmatched")
+    ) 
+  
+  tbl <- tbl |> 
+    pivot_wider(
+      names_from = "d_term_fixed",  # "dispatched" に基づいて列を作成
+      values_from = "n",
+      values_fill = list(n = 0)  # 欠損値を 0 で埋める
+    )
+  
+  if (!"FixedTerm" %in% names(tbl)) {
+    tbl$FixedTerm <- 0  # "Dispatched" がない場合、0 を追加
+  }
+  if (!"Regular" %in% names(tbl)) {
+    tbl$Regular <- 0  # "Regular" がない場合、0 を追加
+  }
+  
+  tbl <- tbl |> 
+    add_row(
+      matched = "All",
+      FixedTerm = sum(tbl$FixedTerm, na.rm = TRUE),  # "Dispatched" 列を合計
+      Regular = sum(tbl$Regular, na.rm = TRUE),        # "Regular" 列を合計
+      .before = 1
+    ) |> 
+    column_to_rownames("matched")
+  
+  return(tbl)
+}
+
+plot_cov_balance <- function(base_year, trt_type, sex) {
+  df_for_balance <- list_matching |> 
+    chuck(as.character(base_year), trt_type, "df") |> 
+    filter(year == base_year & sex == {{ sex }}) |> 
+    mutate(
+      matched = if_else(is.na(matched), 0, matched)
+    ) |> 
+    select(
+      d_term_fixed,
+      matched,
+      age,
+      univ = edu_cg,
+      marriage = d_marriage,
+      child = d_child,
+      industry = coarse_industry,
+      house = d_house_possesion,
+      matches("wage_[a-z]*_monthly"),
+      d_position,
+      logwage,
+      d_OJT,
+      d_OFF_JT
+    )
+  
+  balance_table <- bal.tab(
+    x = df_for_balance |> select(-d_term_fixed, -matched),
+    treat = df_for_balance$d_term_fixed,  # `dispatched` ベクトルを `treat` 引数として使用
+    weights = df_for_balance$matched |> as.integer(),  # `weights` の処理を確認
+    un = TRUE,
+    quick = FALSE
+  )
+
+  love.plot(balance_table, stars = "raw", thresholds = c(-0.1, 0.1)) +
+    labs(x = "Standardized Mean Differences (T-C)") +
+    theme_bw(base_size = 13)
+}
+
+
+plot_outcome_trans <- function(base_year, trt_type, sex, outcome) {
+
+ list_matching |> 
+    chuck(as.character(base_year), trt_type, "df") |> 
+    filter(matched & sex == {{ sex }} & year >= 2015 & year <= 2022) |> 
+    summarise(
+      mean = mean({{ outcome }}, na.rm = TRUE),
+      .by = c(year, d_term_fixed)
+    ) |>
+    ggplot(aes(x = year, y = mean, color = factor(d_term_fixed))) +
+    geom_vline(xintercept = 2020, linetype = "dotted") +
+    geom_line() +
+    geom_point() +
+    labs(x = NULL, y = NULL, color = "Group") +
+    scale_color_manual(
+      values = brewer.pal(3, "Set1")[1:2],
+      breaks = c("1", "0"),
+      labels = c("FixedTerm", "Regular")
+    ) +
+    theme_bw(base_size = 14)
+}
+
+```
+
+```{r data_matching, include=FALSE, warning=FALSE}
+
+list_trt_vars <- list(
+  common = c(
+    "sex", "age_10s", "edu_cg","d_position", "small_firm","d_main_earner"
+  ),
+  type1 = c(),
+  type2 = c("d_child"),
+  type3 = c("d_child", "d_marriage"),
+  type4 = c("d_child", "d_marriage", "coarse_industry")
+)
+
+list_matching <- list(
+  `2019` = map2(2019, rep(1:4), conduct_matching),
+  `2017` = map2(2017, rep(1:4), conduct_matching)
+)
+```
+
+## 2017 (1) { .tabset}
+
+### 男性 { .tabset}
+
+#### バランス
+
+```{r, echo=FALSE}
+
+tbl_matched_n(2017, 1, 0)
+
+plot_cov_balance(2017, 1, 0)
+```
+
+#### アウトカムの推移 { .tabset}
+
+##### 賃金
+
+```{r}
+plot_outcome_trans(2017, 1, 0, logwage)
+```
+
+##### OJT取得率
+
+```{r}
+plot_outcome_trans(2017, 1, 0, d_OJT)
+```
+
+
+##### OFF-JT取得率
+
+```{r}
+plot_outcome_trans(2017, 1, 0, d_OFF_JT)
+```
+
+### 女性 { .tabset}
+
+#### バランス
+
+```{r, echo=FALSE}
+
+tbl_matched_n(2017, 1, 1)
+
+plot_cov_balance(2017, 1, 1)
+```
+
+#### アウトカムの推移 { .tabset}
+
+##### 賃金
+
+```{r}
+plot_outcome_trans(2017, 1, 1, logwage)
+```
+
+##### OJT取得率
+
+```{r}
+plot_outcome_trans(2017, 1, 1, d_OJT)
+```
+
+
+##### OFF-JT取得率
+
+```{r}
+plot_outcome_trans(2017, 1, 1, d_OFF_JT)
+```
+
+
+
+## 2017 (2) { .tabset}
+
+### 男性 { .tabset}
+
+#### バランス
+
+```{r, echo=FALSE}
+
+tbl_matched_n(2017, 2, 0)
+
+plot_cov_balance(2017, 2, 0)
+```
+
+#### アウトカムの推移 { .tabset}
+
+##### 賃金
+
+```{r}
+plot_outcome_trans(2017, 2, 0, logwage)
+```
+
+##### OJT取得率
+
+```{r}
+plot_outcome_trans(2017, 2, 0, d_OJT)
+```
+
+
+##### OFF-JT取得率
+
+```{r}
+plot_outcome_trans(2017, 2, 0, d_OFF_JT)
+```
+
+### 女性 { .tabset}
+
+#### バランス
+
+```{r, echo=FALSE}
+
+tbl_matched_n(2017, 2, 1)
+
+plot_cov_balance(2017, 2, 1)
+```
+
+#### アウトカムの推移 { .tabset}
+
+##### 賃金
+
+```{r}
+plot_outcome_trans(2017, 2, 1, logwage)
+```
+
+##### OJT取得率
+
+```{r}
+plot_outcome_trans(2017, 2, 1, d_OJT)
+```
+
+
+##### OFF-JT取得率
+
+```{r}
+plot_outcome_trans(2017, 2, 1, d_OFF_JT)
+```
+
+
+
+## 2017 (3) { .tabset}
+
+### 男性 { .tabset}
+
+#### バランス
+
+```{r, echo=FALSE}
+
+tbl_matched_n(2017, 3, 0)
+
+plot_cov_balance(2017, 3, 0)
+```
+
+#### アウトカムの推移 { .tabset}
+
+##### 賃金
+
+```{r}
+plot_outcome_trans(2017, 3, 0, logwage)
+```
+
+##### OJT取得率
+
+```{r}
+plot_outcome_trans(2017, 3, 0, d_OJT)
+```
+
+
+##### OFF-JT取得率
+
+```{r}
+plot_outcome_trans(2017, 3, 0, d_OFF_JT)
+```
+
+### 女性 { .tabset}
+
+#### バランス
+
+```{r, echo=FALSE}
+
+tbl_matched_n(2017, 3, 1)
+
+plot_cov_balance(2017, 3, 1)
+```
+
+#### アウトカムの推移 { .tabset}
+
+##### 賃金
+
+```{r}
+plot_outcome_trans(2017, 3, 1, logwage)
+```
+
+##### OJT取得率
+
+```{r}
+plot_outcome_trans(2017, 3, 1, d_OJT)
+```
+
+
+##### OFF-JT取得率
+
+```{r}
+plot_outcome_trans(2017, 3, 1, d_OFF_JT)
+```
+
+
+## 2017 (4) { .tabset}
+
+### 男性 { .tabset}
+
+#### バランス
+
+```{r, echo=FALSE}
+
+tbl_matched_n(2017, 4, 0)
+
+plot_cov_balance(2017, 4, 0)
+```
+
+#### アウトカムの推移 { .tabset}
+
+##### 賃金
+
+```{r}
+plot_outcome_trans(2017, 4, 0, logwage)
+```
+
+##### OJT取得率
+
+```{r}
+plot_outcome_trans(2017, 4, 0, d_OJT)
+```
+
+
+##### OFF-JT取得率
+
+```{r}
+plot_outcome_trans(2017, 4, 0, d_OFF_JT)
+```
+
+### 女性 { .tabset}
+
+#### バランス
+
+```{r, echo=FALSE}
+
+tbl_matched_n(2017, 4, 1)
+
+plot_cov_balance(2017, 4, 1)
+```
+
+#### アウトカムの推移 { .tabset}
+
+##### 賃金
+
+```{r}
+plot_outcome_trans(2017, 4, 1, logwage)
+```
+
+##### OJT取得率
+
+```{r}
+plot_outcome_trans(2017, 4, 1, d_OJT)
+```
+
+
+##### OFF-JT取得率
+
+```{r}
+plot_outcome_trans(2017, 4, 1, d_OFF_JT)
+```
