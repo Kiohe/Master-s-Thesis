@@ -1,0 +1,237 @@
+---
+title: "Turn to Permanent Contract, Constructiong Cohort, Discriptive Statistics"
+author: "Kyohei Sato"
+date: "2024-10-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Install packages
+
+if (!require(pacman)) install.packages("pacman")
+pacman::p_load(
+  cem, cobalt, fixest, gtExtras, here,
+  labelled, RColorBrewer, rlist, scales, tidyverse, estimatr, modelsummary,
+  fastDummies
+)
+pacman::p_load_gh("rstudio/gt")
+
+# Read and clean data
+
+df_basic <- 
+  read_csv(here::here("/masters_thesis/data/panel/dat_basic.csv")) |> 
+  filter(wage_per_hour > 700, wage_per_hour < 10000)
+
+df_cov <-
+  read_csv(here::here("/masters_thesis/data/panel/dat_panel_cov.csv")) |> 
+  mutate(d_regular_same_strong= if_else(regular_same <= 1, 1, 0),
+         d_regular_same_weak = if_else(regular_same <= 2, 1, 0))
+
+# Prepare data for analysis
+## Filtering regular and haken
+df_full <- df_basic |> 
+  left_join(df_cov, by = c("ID", "year"))|> 
+  filter(firm_size <= 12) |> 
+  mutate(post_treat = if_else(year >= 2020, 1, 0),
+         age_10s = age %/% 10,
+         d_position = if_else(position <= 7, 1, 0),
+         small_firm = if_else(firm_size <= 7, 1, 0),
+         d_term_fixed = if_else(d_term_fixed == 1, 1, 0),
+         d_contract_change = if_else(d_reg_nonreg == 1 | q_nonreg_reg == 1,
+                                     1, 0))
+
+# 2017年の時点で契約雇用期間のあるIDを特定
+id_fixed_term_2017 <- df_full |> 
+  filter(year == 2017, d_term_fixed == 1) |> 
+  pull(ID)
+df_full <- df_full |>
+  filter(ID %in% id_fixed_term_2017)
+
+# IDレベル処置群
+id_treated <- df_full |> 
+  group_by(ID) %>%
+  filter(
+    year_entry_current >= 2013 & year_entry_current <= 2017
+  ) |> 
+  pull(ID)
+df_treated <- 
+  df_full |> 
+  filter(ID %in% id_treated) |> 
+  mutate(treat = 1,
+         post_treat = case_when(
+           year_entry_current == 2013 & year >= 2018 ~ 1,
+           year_entry_current == 2014 & year >= 2019 ~ 1,
+           year_entry_current == 2015 & year >= 2020 ~ 1,
+           year_entry_current == 2016 & year >= 2021 ~ 1,
+           year_entry_current == 2017 & year >= 2022 ~ 1,
+           TRUE ~ 0),
+         relativetime = year - year_entry_current - 5)
+
+# IDレベル対照群
+id_never <- df_full |> 
+  group_by(ID) %>%
+  filter(
+    year_entry_current <= 2012 | year_entry_current >= 2018
+  ) |> 
+  pull(ID)
+df_never <- 
+  df_full |> 
+  filter(ID %in% id_never) |> 
+  mutate(treat = 0,
+         relativetime = year - year_entry_current - 5,
+         post_treat = NA)
+
+# 介入群・対照群のデータをマージする
+df_full <- 
+  rbind(df_treated, df_never)
+
+df_full <- 
+df_full |> 
+  group_by(ID) |> 
+  mutate(first.treat = first(year[post_treat == 1], na_rm = T)) |> 
+  mutate(first.treat = replace_na(first.treat, 0),
+         d_term_fixed = 1- d_term_fixed) |> 
+  ungroup()
+
+
+```
+
+
+## Distribution
+```{r cohort construct, echo=FALSE}
+table(df_full$year_entry_current)
+
+table(df_full$month_entry_current)
+
+table(df_full$)
+
+hist <- ggplot(df_full, aes(x = year_entry_current))+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(1955,2022,1))
+
+hist
+
+hist2 <- ggplot(df_full, aes(x = month_entry_current))+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(1,12,1))
+
+hist2
+
+hist3 <- ggplot(df_full, aes(x = ))+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(1,12,1))
+
+hist3
+```
+
+## Transition of the Outcome (2013 cohort)
+```{r transition, echo=FALSE}
+
+# 2013年に現職に就いたコホートをそれ以降に現職についたコホートと比較
+df_2013_cohort <- 
+  df_full |> 
+  filter(year_entry_current > 2012) |> 
+  mutate(treated = if_else(year_entry_current == 2013, 1, 0))
+
+table(df_2013_cohort$treated)
+
+# 雇用契約期間のある人の割合を計算
+df_ft <- 
+  df_2013_cohort |> 
+  group_by(treated, year) |> 
+  summarise(mean_ft = mean(d_term_fixed))
+    
+t <-
+  ggplot(df_ft, 
+         aes(x = year, y = mean_ft, 
+             color = as.factor(treated))) +
+  geom_line() + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Proportion of Fixed Term Contract",
+       color = "treated") + 
+  theme_minimal()  
+
+t
+
+df_wage <- 
+  df_2013_cohort |> 
+  group_by(treated, year) |> 
+  summarise(mean_wage = mean(logwage))
+    
+t2 <-
+  ggplot(df_wage, 
+         aes(x = year, y = mean_wage, 
+             color = as.factor(treated))) +
+  geom_line() + 
+  geom_point() +
+  labs(x = "Year",
+       y = "Proportion of Fixed Term Contract",
+       color = "treated") + 
+  theme_minimal()  
+
+t2
+
+```
+
+## Event Study Analysis (2013 cohort) {.tabset }
+
+### Estimated Model
+
+- Consider the situation that the timing of policy intervention across individuals are equal.
+- $y_{i,t}$ is the outcome variable of worker $i$, in year $t$. $T^*$ is the year of treatment and $\beta_{T^* -1}$ is normalised to zero. 
+
+$$
+\begin{equation*}
+y_{i,t} = \alpha_i + \delta_t + \sum_{r \neq T^* -1} \mathbb{1}(t = r) Treated_i \times \beta_r + \epsilon_{i, t}
+\end{equation*}
+$$
+
+### NO controll variables{.tabset}
+
+#### d_term_fixed
+```{r event study, echo=FALSE}
+
+reg1 <- 
+  feols(d_term_fixed ~ i(year, treated, ref=2017) | ID + year,
+        data = df_2013_cohort)
+
+iplot(reg1)
+
+```
+
+
+#### wage
+```{r event study2, echo=FALSE}
+
+reg2 <- 
+  feols(logwage ~ i(year, treated, ref=2017) | ID + year,
+        data = df_2013_cohort)
+
+iplot(reg2)
+
+```
+
+### Controlling age and college education{.tabset}
+
+#### d_term_fixed
+```{r event study3, echo=FALSE}
+
+reg3 <- 
+  feols(d_term_fixed ~ i(year, treated, ref=2017) + edu_cg + age| ID + year,
+        data = df_2013_cohort)
+
+iplot(reg3)
+
+```
+
+#### wage
+```{r event study4, echo=FALSE}
+
+reg4 <- 
+  feols(logwage ~ i(year, treated, ref=2017)+ edu_cg + age | ID + year,
+        data = df_2013_cohort)
+
+iplot(reg4)
+
+```
