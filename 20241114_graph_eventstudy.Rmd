@@ -1,0 +1,269 @@
+---
+title: "Interaction Term"
+author: "Kyohei Sato"
+date: "2024-11-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Install packages
+
+if (!require(pacman)) install.packages("pacman")
+pacman::p_load(
+  cem, cobalt, fixest, gtExtras, here,
+  labelled, RColorBrewer, rlist, scales, tidyverse, estimatr, modelsummary,
+  fastDummies, did, DT
+)
+pacman::p_load_gh("rstudio/gt")
+
+# Read and clean data
+
+df_basic <- 
+  read_csv(here::here("/masters_thesis/data/panel/dat_basic.csv")) |> 
+  filter(wage_per_hour > 700, wage_per_hour < 10000)
+
+df_cov <-
+  read_csv(here::here("/masters_thesis/data/panel/dat_panel_cov.csv"))
+
+# 1. まず、元データの確認
+# print("元のd_term_fixedの分布:")
+# table(df_cov$d_term_fixed, useNA = "ifany")
+
+# Prepare data for analysis
+df_full <- df_basic |> 
+  left_join(df_cov, by = c("ID", "year"))|> 
+  mutate(age_10s = age %/% 10,
+         d_position = if_else(position <= 7, 1, 0),
+         small_firm = if_else(firm_size <= 7, 1, 0),
+         d_term_fixed = if_else(d_term_fixed == 1, 1, 0), #期間が定められていれば１
+         d_contract_change = if_else(d_reg_nonreg == 1 | q_nonreg_reg == 1,
+                                     1, 0),
+         relativetime = year - year_entry_current - 5
+         )
+
+# -5年の時点で契約雇用期間のあるIDを特定
+df_full <- df_full |>
+   group_by(ID) |>
+   filter(any(relativetime == -5 & d_term_fixed == 1))
+
+# df_check <- df_full_corrected |>
+#   filter(relativetime == -5)
+# table(df_check$d_term_fixed)
+
+df_full <- df_full|>
+  mutate(
+    treat = if_else(year_entry_current >= 2013 & year_entry_current <= 2017, 1, 0),
+    post_treat = case_when(
+      year_entry_current == 2013 & year >= 2018 ~ 1,
+      year_entry_current == 2014 & year >= 2019 ~ 1,
+      year_entry_current == 2015 & year >= 2020 ~ 1,
+      year_entry_current == 2016 & year >= 2021 ~ 1,
+      year_entry_current == 2017 & year >= 2022 ~ 1,
+      TRUE ~ 0)) |> 
+  mutate(eventtime = if_else(treat == 1, relativetime, 0))
+
+
+# 最初に介入を受ける年を特定
+df_full <- 
+df_full |> 
+  group_by(ID) |> 
+  mutate(first.treat = first(year[post_treat == 1], na_rm = T)) |> 
+  mutate(first.treat = replace_na(first.treat, 0),
+         d_term_fixed = 1- d_term_fixed) |> 
+  ungroup()
+
+
+```
+
+## Sample Size
+```{r, echo=FALSE}
+sample_sizes <- df_full %>%
+  distinct(ID, first.treat) %>%
+  group_by(first.treat) %>%
+  summarise(n = n()) %>%
+  arrange(first.treat)
+
+datatable(sample_sizes)
+
+```
+
+## Transition of the Outcome
+```{r transition, echo=FALSE}
+
+ft <- df_full %>%
+  filter(abs(relativetime) <= 7) %>%  
+  group_by(relativetime, treat) %>%
+  summarise(
+    mean_outcome = mean(d_term_fixed, na.rm = TRUE),
+    se = sd(d_term_fixed, na.rm = TRUE) / sqrt(n()),
+    .groups = 'drop'
+  ) %>%
+  ggplot(aes(x = relativetime, y = mean_outcome, color = factor(treat))) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_point() +
+  geom_line() +
+  geom_ribbon(
+    aes(ymin = mean_outcome - 1.96*se, 
+        ymax = mean_outcome + 1.96*se,
+        fill = factor(treat)),
+    alpha = 0.2,
+    color = NA
+  ) +
+  scale_color_manual(
+    values = c("1" = "red", "0" = "blue"),
+    labels = c("treated", "control"),
+    name = "Group"
+  ) +
+  scale_fill_manual(
+    values = c("1" = "red", "0" = "blue"),
+    labels =  c("treated", "control"),
+    name = "Group"
+  ) +
+  labs(
+    x = "Time Relative to Treatment",
+    y = "Proportion of Fixed Term Contract",
+    title = "Trends in Fixed Term Contracts",
+    subtitle = "Vertical line indicates treatment timing"
+  ) +
+  theme_minimal()
+
+
+ft
+
+
+##賃金の推移プロット
+t2 <- df_full %>%
+  group_by(relativetime, treat) %>%
+  summarise(
+    mean_outcome = mean(logwage, na.rm = TRUE),
+    se = sd(d_term_fixed, na.rm = TRUE) / sqrt(n()),
+    .groups = 'drop'
+  ) %>%
+  filter(relativetime <= 5) |> 
+  ggplot(aes(x = relativetime, y = mean_outcome, color = factor(treat))) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_point() +
+  geom_line() +
+  geom_ribbon(
+    aes(ymin = mean_outcome - 1.96*se, 
+        ymax = mean_outcome + 1.96*se,
+        fill = factor(treat)),
+    alpha = 0.2,
+    color = NA
+  ) +
+  scale_color_manual(
+    values = c("0" = "blue", "1" = "red"),
+    labels = c("Control", "Treated"),
+    name = "Group"
+  ) +
+  scale_fill_manual(
+    values = c("0" = "blue", "1" = "red"),
+    labels = c("Control", "Treated"),
+    name = "Group"
+  ) +
+  labs(
+    x = "Time Relative to Treatment",
+    y = "Log Wage Growth",
+    title = "Trends in Log Wage Growth",
+    subtitle = "Vertical line indicates treatment timing"
+  ) +
+  theme_minimal()
+
+t2
+
+```
+
+
+## Event Study { .tabset}
+$$
+\begin{aligned}
+Y_{it} = \alpha_i + \lambda_t + \sum_{r \neq -1} \beta_r \mathbb{I} (t =  r) \times Treat_i + \epsilon_{it}
+\end{aligned}
+$$
+
+### Indefinite-Term Contract
+```{r, echo=FALSE, message=FALSE}
+
+reg0 <- 
+  feols(d_term_fixed ~ i(eventtime, treat, ref = -1) + eventtime + treat,
+        cluster = ~ID,
+        data = df_full)
+
+# iplot(reg0, 
+#       xlab = 'Time to treatment',
+#       ylab = 'proportion of permanent contract',
+#       main = 'Event study: Staggered treatment')
+
+
+reg1 <- 
+  feols(d_term_fixed ~ i(eventtime, treat, ref = -1) + eventtime + treat | ID,
+        cluster = ~ID,
+        data = df_full)
+
+# iplot(reg1, 
+#       xlab = 'Time to treatment',
+#       ylab = 'proportion of permanent contract',
+#       main = 'Event study: Staggered treatment (TWFE)')
+
+# table(df_full$eventtime, df_full$treat)
+
+reg2 <- 
+  feols(d_term_fixed ~ i(eventtime, treat, ref = -1) + eventtime + treat +age + edu_cg + as.factor(coarse_industry) | ID,
+        cluster = ~ID,
+        data = df_full)
+
+# iplot(reg2, 
+#       xlab = 'Time to treatment',
+#       ylab = 'proportion of permanent contract',
+#       main = 'Event study: Staggered treatment (TWFE)')
+
+iplot(list(reg0, reg1, reg2), sep = 0.2, ref.line = -1,
+      xlab = 'Time to treatment',
+      ylab = "proportion of permanent contract",
+      main = 'Event study: Staggered treatment')
+legend("bottomleft", col = c(1, 2, 3), pch = c(20, 17, 15), 
+       legend = c("NO Control", "Individual FE", "FE & Control"))
+
+```
+
+### Wage
+```{r, echo=FALSE, message=FALSE}
+
+reg3 <- 
+  feols(logwage ~ i(eventtime, treat, ref = -1) + eventtime + treat,
+        cluster = ~ID,
+        data = df_full)
+
+# iplot(reg3, 
+#       xlab = 'Time to treatment',
+#       ylab = 'Wage',
+      # main = 'Event study: Staggered treatment')
+
+reg4 <- 
+  feols(logwage ~ i(eventtime, treat, ref = -1) + eventtime + treat | ID,
+        cluster = ~ID,
+        data = df_full)
+
+# iplot(reg4, 
+#       xlab = 'Time to treatment',
+#       ylab = 'Wage',
+#       main = 'Event study: Staggered treatment (TWFE)')
+
+reg5 <- 
+  feols(logwage ~ i(eventtime, treat, ref = -1)  + eventtime + treat +age + edu_cg + as.factor(coarse_industry) | ID,
+        cluster = ~ID,
+        data = df_full)
+
+# iplot(reg5, 
+#       xlab = 'Time to treatment',
+#       ylab = 'Wage',
+#       main = 'Event study: Staggered treatment (TWFE)')
+
+iplot(list(reg3, reg4, reg5), sep = 0.2, ref.line = -1,
+      xlab = 'Time to treatment',
+      ylab = "Wage",
+      main = 'Event study: Staggered treatment')
+legend("bottomleft", col = c(1, 2, 3), pch = c(20, 17, 15), 
+       legend = c("NO Control", "Individual FE", "FE & Control"))
+
+```
