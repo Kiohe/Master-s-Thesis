@@ -1,0 +1,744 @@
+---
+title: "Callaway and Sant'Anna sample -5"
+author: "Kyohei Sato"
+date: "2024-11-21"
+output: html_document
+---
+
+## 介入を受ける5年前に雇用期間のあるサンプルをもちいた
+
+```{r setup, include=FALSE}
+# Install packages
+
+if (!require(pacman)) install.packages("pacman")
+pacman::p_load(
+  cem, cobalt, fixest, gtExtras, here,
+  labelled, RColorBrewer, rlist, scales, tidyverse, estimatr, modelsummary,
+  fastDummies, did, DT, lfe
+)
+pacman::p_load_gh("rstudio/gt")
+
+# Read and clean data
+
+df_basic <- 
+  read_csv(here::here("/masters_thesis/data/panel/dat_basic.csv")) |> 
+  filter(wage_per_hour > 700, wage_per_hour < 10000)
+
+df_cov <-
+  read_csv(here::here("/masters_thesis/data/panel/dat_panel_cov.csv"))
+
+# 1. まず、元データの確認
+# print("元のd_term_fixedの分布:")
+# table(df_cov$d_term_fixed, useNA = "ifany")
+
+# Prepare data for analysis
+df_full <- df_basic |> 
+  left_join(df_cov, by = c("ID", "year"))|> 
+  mutate(age_10s = age %/% 10,
+         d_position = if_else(position <= 7, 1, 0),
+         small_firm = if_else(firm_size <= 7, 1, 0),
+         d_term_fixed = if_else(d_term_fixed == 1, 1, 0), #期間が定められていれば１
+         d_contract_change = if_else(d_reg_nonreg == 1 | q_nonreg_reg == 1,
+                                     1, 0),
+         relativetime = year - year_entry_current - 5,
+         coarse_industry = as.factor(coarse_industry),
+         sex = as.factor(sex),
+         edu_cg = as.factor(edu_cg)
+         ) 
+# table(df_full$d_term_fixed)
+
+# フィルタリング
+# df_full_corrected <- df_full |>
+#   group_by(ID) |>
+#   mutate(
+#     has_fixed_at_minus5 = any(relativetime == -5 & d_term_fixed == 1, na.rm = TRUE)
+#   ) |>
+#   filter(has_fixed_at_minus5) |>
+#   select(-has_fixed_at_minus5)
+
+# -5のデータがそもそも存在しない人もいる
+
+# -5年の時点で契約雇用期間のあるIDを特定
+df_full_corrected <- df_full |>
+   group_by(ID) |>
+   filter(any(relativetime == -5 & d_term_fixed == 1))
+
+# df_check <- df_full_corrected |>
+#   filter(relativetime == -5)
+# table(df_check$d_term_fixed)
+
+df_full <- df_full_corrected |>
+  mutate(
+    treat = case_when(
+      year_entry_current >= 2013 & year_entry_current <= 2017 ~ 1,
+      year_entry_current <= 2012 | year_entry_current >= 2018 ~ 0   
+    ),
+    post_treat = case_when(
+      year_entry_current == 2013 & year >= 2018 ~ 1,
+      year_entry_current == 2014 & year >= 2019 ~ 1,
+      year_entry_current == 2015 & year >= 2020 ~ 1,
+      year_entry_current == 2016 & year >= 2021 ~ 1,
+      year_entry_current == 2017 & year >= 2022 ~ 1,
+      TRUE ~ 0)) |> 
+  mutate(eventtime = if_else(treat == 1, relativetime, 0))
+
+# 最初に介入を受ける年を特定
+df_full <- 
+df_full |> 
+  group_by(ID) |> 
+  mutate(first.treat = first(year[post_treat == 1], na_rm = T)) |> 
+  mutate(first.treat = replace_na(first.treat, 0),
+         d_term_fixed = 1- d_term_fixed) |>
+  filter(age <= 60) |> 
+  ungroup()
+
+df_notyet <- 
+  df_full |> 
+  filter(year_entry_current >= 2013)
+
+df_lt <-
+  df_full |> 
+  filter(year_entry_current <= 2017 & year_entry_current >= 2013)
+
+```
+
+## Sample Size
+```{r, echo=FALSE}
+sample_sizes <- df_notyet %>%
+  distinct(ID, first.treat) %>%
+  group_by(first.treat) %>%
+  summarise(n = n()) %>%
+  arrange(first.treat)
+
+datatable(sample_sizes)
+
+```
+
+## Transition of the Outcome
+```{r transition, echo=FALSE}
+
+ft <- df_full %>%
+  filter(abs(relativetime) <= 7) %>%  
+  group_by(relativetime, treat) %>%
+  summarise(
+    mean_outcome = mean(d_term_fixed, na.rm = TRUE),
+    se = sd(d_term_fixed, na.rm = TRUE) / sqrt(n()),
+    .groups = 'drop'
+  ) %>%
+  ggplot(aes(x = relativetime, y = mean_outcome, color = factor(treat))) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_point() +
+  geom_line() +
+  # geom_ribbon(
+  #   aes(ymin = mean_outcome - 1.96*se, 
+  #       ymax = mean_outcome + 1.96*se,
+  #       fill = factor(treat)),
+  #   alpha = 0.2,
+  #   color = NA
+  # ) +
+  scale_color_manual(
+    values = c("0" = "blue", "1" = "red"),
+    labels = c("Control", "Treated"),
+    name = "Group"
+  ) +
+  # scale_fill_manual(
+  #   values = c("0" = "blue", "1" = "red"),
+  #   labels = c("Control", "Treated"),
+  #   name = "Group"
+  # ) +
+  labs(
+    x = "Time Relative to Treatment",
+    y = "Proportion of Indefinite-term Contract",
+    title = "Trends in Fixed Term Contracts",
+    subtitle = "Vertical line indicates treatment timing"
+  ) +
+  theme_minimal()
+
+ft
+
+
+##賃金の推移プロット
+t2 <- df_full %>%
+  group_by(relativetime, treat) %>%
+  summarise(
+    mean_outcome = mean(logwage, na.rm = TRUE),
+    se = sd(d_term_fixed, na.rm = TRUE) / sqrt(n()),
+    .groups = 'drop'
+  ) %>%
+  filter(relativetime <= 5) |> 
+  ggplot(aes(x = relativetime, y = mean_outcome, color = factor(treat))) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_point() +
+  geom_line() +
+  # geom_ribbon(
+  #   aes(ymin = mean_outcome - 1.96*se, 
+  #       ymax = mean_outcome + 1.96*se,
+  #       fill = factor(treat)),
+  #   alpha = 0.2,
+  #   color = NA
+  # ) +
+  scale_color_manual(
+    values = c("0" = "blue", "1" = "red"),
+    labels = c("Control", "Treated"),
+    name = "Group"
+  ) +
+  # scale_fill_manual(
+  #   values = c("0" = "blue", "1" = "red"),
+  #   labels = c("Control", "Treated"),
+  #   name = "Group"
+  # ) +
+  labs(
+    x = "Time Relative to Treatment",
+    y = "Log Wage Growth",
+    title = "Trends in Log Wage Growth",
+    subtitle = "Vertical line indicates treatment timing"
+  ) +
+  theme_minimal()
+
+t2
+
+```
+
+## DID analysis
+```{r CS, echo=FALSE, warning=FALSE, message=FALSE}
+
+outcomes <- 
+  df_full |> 
+  select(d_term_fixed, 
+             logwage,
+         hourly_wage,
+         regular) |> 
+  names() |> 
+    purrr::set_names()
+
+# Only not yet with universal base period
+list_results4 <- map(outcomes, function(y) {
+  att_gt(
+    yname = y,
+    gname = "first.treat",
+    idname = "ID",
+    tname = "year",
+    control_group = "notyettreated",
+    base_period = "universal",
+    xformla = ~1,
+    data = df_lt,
+    allow_unbalanced_panel = TRUE,
+    est_method = "dr"
+  )
+})
+
+list_aggresults4 <- map(list_results4, function(result) {
+  aggte(result, type = "dynamic", na.rm = TRUE)
+})
+
+# Include never treated with universal base period
+list_results5 <- map(outcomes, function(y) {
+  att_gt(
+    yname = y,
+    gname = "first.treat",
+    idname = "ID",
+    tname = "year",
+    control_group = "notyettreated",
+        base_period = "universal",
+    xformla = ~1,
+    data = df_notyet,
+    allow_unbalanced_panel = TRUE,
+    est_method = "dr"
+  )
+})
+
+list_aggresults5 <- map(list_results5, function(result) {
+  aggte(result, type = "dynamic", na.rm = TRUE)
+})
+
+
+# ONly never treated with universal base period
+list_results6 <- map(outcomes, function(y) {
+  att_gt(
+    yname = y,
+    gname = "first.treat",
+    idname = "ID",
+    tname = "year",
+    control_group = "nevertreated",
+        base_period = "universal",
+    xformla = ~1,
+    data = df_notyet,
+    allow_unbalanced_panel = TRUE,
+    est_method = "dr"
+  )
+})
+
+list_aggresults6 <- map(list_results6, function(result) {
+  aggte(result, type = "dynamic", na.rm = TRUE)
+})
+
+# Only not yet with universal base period and with age and educ
+list_results7 <- map(outcomes, function(y) {
+  att_gt(
+    yname = y,
+    gname = "first.treat",
+    idname = "ID",
+    tname = "year",
+    control_group = "notyettreated",
+    base_period = "universal",
+    xformla = ~age + edu_cg,
+    data = df_lt,
+    allow_unbalanced_panel = TRUE,
+    est_method = "reg"
+  )
+})
+
+list_aggresults7 <- map(list_results4, function(result) {
+  aggte(result, type = "dynamic", na.rm = TRUE)
+})
+
+```
+
+
+# Results with universal base period {.tabset}
+
+## Only Not Yet Treated as a Comparison
+
+### Group-Time Treatment Effect {.tabset}
+```{r gt4,echo=FALSE, results='asis', message=FALSE, warning=FALSE, fig.height=20, fig.width=12}
+
+section_title <- 
+  c("雇用に期間がある割合(上が無期)",
+    "Log wage",
+    "時給(円)",
+    "「正規雇用」の割合")
+
+list_CSplots4 <- map(list_results4, function(result) {
+  plot <- ggdid(result)
+  })
+
+## output
+walk2(list_CSplots4, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+```
+
+### Event study Results {.tabset}
+
+```{r plot4, echo=FALSE, results='asis', warning=FALSE, fig.width=8}
+
+list_aggplots4 <- map(list_aggresults4, function(aggte_result) {
+  ggdid(aggte_result, xgap = 1)
+})
+
+walk2(list_aggplots4, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+
+```
+
+## Not Yet Treated + Never Treated as a Comparison
+
+### Group-Time Treatment Effect {.tabset}
+```{r gt5,echo=FALSE, results='asis', message=FALSE, warning=FALSE, fig.height=20, fig.width=12}
+
+list_CSplots5 <- map(list_results5, function(result) {
+  plot <- ggdid(result)
+  })
+
+## output
+walk2(list_CSplots5, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+```
+
+### Event study Results {.tabset}
+
+```{r plot5, echo=FALSE, results='asis', warning=FALSE, fig.width=15}
+
+list_aggplots5 <- map(list_aggresults5, function(aggte_result) {
+  ggdid(aggte_result, xgap = 1)
+})
+
+walk2(list_aggplots5, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+
+```
+
+## Only Never Treated as a Comparison
+
+### Group-Time Treatment Effect {.tabset}
+```{r gt6,echo=FALSE, results='asis', message=FALSE, warning=FALSE, fig.height=20, fig.width=12}
+
+list_CSplots6 <- map(list_results6, function(result) {
+  plot <- ggdid(result)
+  })
+
+## output
+walk2(list_CSplots6, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+```
+
+### Event study Results {.tabset}
+
+```{r plot6, echo=FALSE, results='asis', warning=FALSE, fig.width=15}
+
+list_aggplots6 <- map(list_aggresults6, function(aggte_result) {
+  ggdid(aggte_result, xgap = 1)
+})
+
+walk2(list_aggplots6, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+
+```
+
+
+## Not yet with cov
+
+### Group-Time Treatment Effect {.tabset}
+```{r gt7,echo=FALSE, results='asis', message=FALSE, warning=FALSE, fig.height=20, fig.width=12}
+
+list_CSplots7 <- map(list_results7, function(result) {
+  plot <- ggdid(result)
+  })
+
+## output
+walk2(list_CSplots7, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+```
+
+### Event study Results {.tabset}
+
+```{r plot7, echo=FALSE, results='asis', warning=FALSE, fig.width=15}
+
+list_aggplots7 <- map(list_aggresults7, function(aggte_result) {
+  ggdid(aggte_result, xgap = 1)
+})
+
+walk2(list_aggplots7, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+
+```
+
+
+# Interaction term (Martins(2021)) and Sun & Abraham (2020) {.tabset}
+
+$$
+\begin{aligned}
+Y_{it} =  \sum_{r \neq -1} \beta_r \mathbb{I} (t =  r) \times Treat_i + \alpha_i + \lambda_t + \epsilon_{it}
+\end{aligned}
+$$
+
+## Indefinite-Term Contract
+```{r, echo=FALSE, message=FALSE, fig.height=8}
+
+reg0 <- 
+  feols(d_term_fixed ~ i(eventtime, treat, ref = -1) | ID + year,
+        cluster = ~ID,
+        data = df_lt)
+
+reg_0_2 <-
+  feols(d_term_fixed ~ sunab(first.treat, year) | ID + year,
+        cluster = ~ID,
+        data = df_lt)
+
+iplot(list(reg0, reg_0_2), sep = 0.2, ref.line = -1,
+      xlab = 'Time to treatment',
+      ylab = "Proportion of workers with permanent contract")
+legend("bottomleft", col = c(1, 2), pch = c(20, 17), 
+       legend = c("Interaction", "Sun & Abraham"))
+
+```
+
+## Logwage
+```{r, echo=FALSE, message=FALSE, fig.height=8}
+
+reg1 <- 
+  feols(logwage ~ i(eventtime, treat, ref = -1) | ID + year,
+        cluster = ~ID,
+        data = df_lt)
+
+reg_1_2 <-
+  feols(logwage ~ sunab(first.treat, year) | ID + year,
+        cluster = ~ID,
+        data = df_lt)
+
+iplot(list(reg1, reg_1_2), sep = 0.2, ref.line = -1,
+      xlab = 'Time to treatment',
+      ylab = "log wage")
+legend("bottomleft", col = c(1, 2), pch = c(20, 17), 
+       legend = c("Interaction", "Sun & Abraham"))
+
+```
+
+## wage
+```{r, echo=FALSE, message=FALSE, fig.height=8}
+
+reg2 <- 
+  feols(hourly_wage ~ i(eventtime, treat, ref = -1) | ID + year,
+        cluster = ~ID,
+        data = df_lt)
+
+reg_2_2 <-
+  feols(hourly_wage ~ sunab(first.treat, year) | ID + year,
+        cluster = ~ID,
+        data = df_lt)
+
+iplot(list(reg2, reg_2_2), sep = 0.2, ref.line = -1,
+      xlab = 'Time to treatment',
+      ylab = "Hourly wage")
+legend("bottomleft", col = c(1, 2), pch = c(20, 17), 
+       legend = c("Interaction", "Sun & Abraham"))
+
+```
+
+## Regular
+```{r, echo=FALSE, message=FALSE, fig.height=8}
+
+reg3 <- 
+  feols(regular ~ i(eventtime, treat, ref = -1) | ID + year,
+        cluster = ~ID,
+        data = df_lt)
+
+reg_3_2 <-
+  feols(regular~ sunab(first.treat, year) | ID + year,
+        cluster = ~ID,
+        data = df_lt)
+
+iplot(list(reg3, reg_3_2), sep = 0.2, ref.line = -1,
+      xlab = 'Time to treatment',
+      ylab = "Proportion of workers with 'regular' contract")
+legend("bottomleft", col = c(1, 2), pch = c(20, 17), 
+       legend = c("Interaction", "Sun & Abraham"))
+
+```
+
+
+# TWFE event study (Miller 2023){ .tabset}
+
+$$
+\begin{aligned}
+Y_{it} = \alpha_i + \lambda_t + \sum_{r \neq -1} \beta_r \mathbb{I} (t =  r) + \epsilon_{it}
+\end{aligned}
+$$
+
+```{r, echo=FALSE}
+## Setting
+
+df_twfe <- df_lt %>%
+  mutate(
+    time_til = year - first.treat,
+    lead1 = case_when(time_til == -1 ~ 1, TRUE ~ 0),
+    lead2 = case_when(time_til == -2 ~ 1, TRUE ~ 0),
+    lead3 = case_when(time_til == -3 ~ 1, TRUE ~ 0),
+    lead4 = case_when(time_til == -4 ~ 1, TRUE ~ 0),
+    lead5 = case_when(time_til == -5 ~ 1, TRUE ~ 0),
+    lead6 = case_when(time_til == -6 ~ 1, TRUE ~ 0),
+    lead7 = case_when(time_til == -7 ~ 1, TRUE ~ 0),
+    
+    lag0 = case_when(time_til == 0 ~ 1, TRUE ~ 0),
+    lag1 = case_when(time_til == 1 ~ 1, TRUE ~ 0),
+    lag2 = case_when(time_til == 2 ~ 1, TRUE ~ 0),
+    lag3 = case_when(time_til == 3 ~ 1, TRUE ~ 0),
+    lag4 = case_when(time_til == 4 ~ 1, TRUE ~ 0),
+    lag5 = case_when(time_til == 5 ~ 1, TRUE ~ 0)
+  )
+
+event_study_formula <- as.formula(
+  paste("d_term_fixed ~ + ",
+        paste(
+          paste(paste("lead", 1:7, sep = ""), collapse = " + "),
+          paste(paste("lag", 1:5, sep = ""), collapse = " + "), sep = " + "),
+        "| year + ID | 0 | ID"
+  ),
+)
+
+event_study_reg <- felm(event_study_formula, data = df_twfe)
+# summary(event_study_reg)
+
+```
+
+## Indefinite-Term Contract
+```{r, echo=FALSE, message=FALSE}
+# order of the coefficients for the plot
+plot_order <- c("lead7", 
+                "lead6", "lead5", "lead4", "lead3", 
+                "lead2", "lead1", "lag1", 
+                "lag2", "lag3", "lag4", "lag5")
+
+# grab the clustered standard errors
+# and average coefficient estimates
+# from the regression, label them accordingly
+# add a zero'th lag for plotting purposes
+leadslags_plot <- tibble(
+  sd = c(event_study_reg$cse[plot_order], 0),
+  mean = c(coef(event_study_reg)[plot_order], 0),
+  label = c(-7,-6, -5, -4, -3, -2, -1, 1,2,3,4,5, 0)
+)
+
+# This version has a point-range at each
+# estimated lead or lag
+# comes down to stylistic preference at the
+# end of the day!
+leadslags_plot %>%
+  ggplot(aes(x = label, y = mean,
+             ymin = mean-1.96*sd, 
+             ymax = mean+1.96*sd)) +
+  geom_pointrange() +
+  theme_minimal() +
+  xlab("Relative year") +
+  ylab("Proportion of workers with permanent contract") +
+  geom_hline(yintercept = 0,
+             linetype = "dashed") +
+  geom_vline(xintercept = 0,
+             linetype = "dashed")
+  
+```
+
+## logWage
+```{r, echo=FALSE, message=FALSE}
+
+event_study_formula2 <- as.formula(
+  paste("logwage ~ + ",
+        paste(
+          paste(paste("lead", 1:7, sep = ""), collapse = " + "),
+          paste(paste("lag", 1:5, sep = ""), collapse = " + "), sep = " + "),
+        "| year + ID| 0 | ID"
+  ),
+)
+
+event_study_reg2 <- felm(event_study_formula2, data = df_twfe)
+# summary(event_study_reg2)
+
+```
+
+
+```{r, echo=FALSE}
+leadslags_plot2 <- tibble(
+  sd = c(event_study_reg2$cse[plot_order], 0),
+  mean = c(coef(event_study_reg2)[plot_order], 0),
+  label = c(-7,-6, -5, -4, -3, -2, -1, 1,2,3,4,5, 0)
+)
+
+# This version has a point-range at each
+# estimated lead or lag
+# comes down to stylistic preference at the
+# end of the day!
+leadslags_plot2 %>%
+  ggplot(aes(x = label, y = mean,
+             ymin = mean-1.96*sd, 
+             ymax = mean+1.96*sd)) +
+  geom_pointrange() +
+  theme_minimal() +
+  xlab("Relative year") +
+  ylab("Log wage") +
+  geom_hline(yintercept = 0,
+             linetype = "dashed") +
+  geom_vline(xintercept = 0,
+             linetype = "dashed")
+
+```
+
+## Wage
+```{r, echo=FALSE, message=FALSE}
+
+event_study_formula3 <- as.formula(
+  paste("hourly_wage ~ + ",
+        paste(
+          paste(paste("lead", 1:7, sep = ""), collapse = " + "),
+          paste(paste("lag", 1:5, sep = ""), collapse = " + "), sep = " + "),
+        "| year + ID| 0 | ID"
+  ),
+)
+
+event_study_reg3 <- felm(event_study_formula3, data = df_twfe)
+# summary(event_study_reg2)
+
+```
+
+
+```{r, echo=FALSE}
+leadslags_plot3 <- tibble(
+  sd = c(event_study_reg3$cse[plot_order], 0),
+  mean = c(coef(event_study_reg3)[plot_order], 0),
+  label = c(-7,-6, -5, -4, -3, -2, -1, 1,2,3,4,5, 0)
+)
+
+# This version has a point-range at each
+# estimated lead or lag
+# comes down to stylistic preference at the
+# end of the day!
+leadslags_plot3 %>%
+  ggplot(aes(x = label, y = mean,
+             ymin = mean-1.96*sd, 
+             ymax = mean+1.96*sd)) +
+  geom_pointrange() +
+  theme_minimal() +
+  xlab("Relative year") +
+  ylab("Wage") +
+  geom_hline(yintercept = 0,
+             linetype = "dashed") +
+  geom_vline(xintercept = 0,
+             linetype = "dashed")
+
+```
+
+## Regular
+```{r, echo=FALSE, message=FALSE}
+
+event_study_formula4 <- as.formula(
+  paste("regular ~ + ",
+        paste(
+          paste(paste("lead", 1:7, sep = ""), collapse = " + "),
+          paste(paste("lag", 1:5, sep = ""), collapse = " + "), sep = " + "),
+        "| year + ID| 0 | ID"
+  ),
+)
+
+event_study_reg4 <- felm(event_study_formula4, data = df_twfe)
+# summary(event_study_reg2)
+
+```
+
+
+```{r, echo=FALSE}
+leadslags_plot4 <- tibble(
+  sd = c(event_study_reg4$cse[plot_order], 0),
+  mean = c(coef(event_study_reg4)[plot_order], 0),
+  label = c(-7,-6, -5, -4, -3, -2, -1, 1,2,3,4,5, 0)
+)
+
+# This version has a point-range at each
+# estimated lead or lag
+# comes down to stylistic preference at the
+# end of the day!
+leadslags_plot4 %>%
+  ggplot(aes(x = label, y = mean,
+             ymin = mean-1.96*sd, 
+             ymax = mean+1.96*sd)) +
+  geom_pointrange() +
+  theme_minimal() +
+  xlab("Relative year") +
+  ylab("Proportion of workers woth 'regular' contract") +
+  geom_hline(yintercept = 0,
+             linetype = "dashed") +
+  geom_vline(xintercept = 0,
+             linetype = "dashed")
+
+```
