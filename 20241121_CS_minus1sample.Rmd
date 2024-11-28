@@ -33,18 +33,20 @@ df_cov <-
 
 # Prepare data for analysis
 df_full <- df_basic |> 
-  left_join(df_cov, by = c("ID", "year"))|> 
-  mutate(age_10s = age %/% 10,
-         d_position = if_else(position <= 7, 1, 0),
-         small_firm = if_else(firm_size <= 7, 1, 0),
-         d_term_fixed = if_else(d_term_fixed == 1, 1, 0), #期間が定められていれば１
-         d_contract_change = if_else(d_reg_nonreg == 1 | q_nonreg_reg == 1,
-                                     1, 0),
-         relativetime = year - year_entry_current - 5,
-         coarse_industry = as.factor(coarse_industry),
-         sex = as.factor(sex),
-         edu_cg = as.factor(edu_cg)
-         ) 
+  left_join(df_cov, by = c("ID", "year")) |> 
+  mutate(
+    age_10s = age %/% 10,
+    d_position = if_else(position <= 7, 1, 0),
+    small_firm = if_else(firm_size <= 7, 1, 0),
+    d_term_fixed = if_else(d_term_fixed == 1, 1, 0), # 期間が定められていれば1
+    d_contract_change = if_else(d_reg_nonreg == 1 | q_nonreg_reg == 1, 1, 0),
+    relativetime = if_else(year_entry_current > 2012, 
+                           year - year_entry_current - 5, # 2013年以降
+                           year - 2018),                 # 2012年以前
+    coarse_industry = as.factor(coarse_industry),
+    sex = as.factor(sex),
+    edu_cg = as.factor(edu_cg)
+  )
 # table(df_full$d_term_fixed)
 
 # フィルタリング
@@ -70,11 +72,11 @@ df_full_corrected <- df_full |>
 df_full <- df_full_corrected |>
   mutate(
     treat = case_when(
-      year_entry_current >= 2013 & year_entry_current <= 2017 ~ 1,
-      year_entry_current <= 2012 | year_entry_current >= 2018 ~ 0   
+      year_entry_current <= 2017 ~ 1,
+      year_entry_current >= 2018 ~ 0   
     ),
     post_treat = case_when(
-      year_entry_current == 2013 & year >= 2018 ~ 1,
+      year_entry_current <= 2013 & year >= 2018 ~ 1,
       year_entry_current == 2014 & year >= 2019 ~ 1,
       year_entry_current == 2015 & year >= 2020 ~ 1,
       year_entry_current == 2016 & year >= 2021 ~ 1,
@@ -92,6 +94,13 @@ df_full |>
   filter(age <= 60) |> 
   ungroup()
 
+df_full <- df_full |> 
+  group_by(ID) |> 
+  summarise(max_quit = max(d_quit, na.rm = TRUE)) |> 
+  filter(max_quit == 0) |> 
+  select(ID) |> 
+  inner_join(df_full, by = "ID")
+
 df_notyet <- 
   df_full |> 
   filter(year_entry_current >= 2013)
@@ -104,7 +113,7 @@ df_lt <-
 
 ## Sample Size
 ```{r, echo=FALSE}
-sample_sizes <- df_notyet %>%
+sample_sizes <- df_full %>%
   distinct(ID, first.treat) %>%
   group_by(first.treat) %>%
   summarise(n = n()) %>%
@@ -119,14 +128,18 @@ datatable(sample_sizes)
 
 ft <- df_full %>%
   filter(abs(relativetime) <= 7) %>%  
-  group_by(relativetime, treat) %>%
+  group_by(year, first.treat) %>%
   summarise(
     mean_outcome = mean(d_term_fixed, na.rm = TRUE),
     se = sd(d_term_fixed, na.rm = TRUE) / sqrt(n()),
     .groups = 'drop'
   ) %>%
-  ggplot(aes(x = relativetime, y = mean_outcome, color = factor(treat))) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  ggplot(aes(x = year, y = mean_outcome, color = factor(first.treat))) +
+  geom_vline(xintercept = 2018, linetype = "dashed", color = "gray50") +
+   geom_vline(xintercept = 2019, linetype = "dashed", color = "gray50") +
+   geom_vline(xintercept = 2020, linetype = "dashed", color = "gray50") +
+   geom_vline(xintercept = 2021, linetype = "dashed", color = "gray50") +
+   geom_vline(xintercept = 2022, linetype = "dashed", color = "gray50") +
   geom_point() +
   geom_line() +
   # geom_ribbon(
@@ -137,8 +150,8 @@ ft <- df_full %>%
   #   color = NA
   # ) +
   scale_color_manual(
-    values = c("0" = "blue", "1" = "red"),
-    labels = c("Control", "Treated"),
+    values = c("0" = "blue", "2018" = "red", "2019" = "deeppink", "2020" = "deeppink3", "2021" = "red3", "2022" = "red4"),
+    labels = c("Control", "2018 Group", "2019 Group", "2020 Group", "2021 Group", "2022 Group"),
     name = "Group"
   ) +
   # scale_fill_manual(
@@ -207,9 +220,35 @@ outcomes <-
   select(d_term_fixed, 
              logwage,
          hourly_wage,
-         regular) |> 
+         regular,
+         job_levelup,
+         job_satisfuction,
+         life_satisfuction,
+         mental_tension,
+         mental_depressed,
+         career_perspective) |> 
   names() |> 
     purrr::set_names()
+
+# Include year of entry before 2012
+list_results3 <- map(outcomes, function(y) {
+  att_gt(
+    yname = y,
+    gname = "first.treat",
+    idname = "ID",
+    tname = "year",
+    control_group = "notyettreated",
+    base_period = "universal",
+    xformla = ~1,
+    data = df_full,
+    allow_unbalanced_panel = TRUE,
+    est_method = "dr"
+  )
+})
+
+list_aggresults3 <- map(list_results3, function(result) {
+  aggte(result, type = "dynamic", na.rm = TRUE)
+})
 
 # Only not yet with universal base period
 list_results4 <- map(outcomes, function(y) {
@@ -297,16 +336,56 @@ list_aggresults7 <- map(list_results4, function(result) {
 
 # Results with universal base period {.tabset}
 
-## Only Not Yet Treated as a Comparison
+## Include YoE before 2012
 
 ### Group-Time Treatment Effect {.tabset}
-```{r gt4,echo=FALSE, results='asis', message=FALSE, warning=FALSE, fig.height=20, fig.width=12}
+```{r gt3,echo=FALSE, results='asis', message=FALSE, warning=FALSE, fig.height=20, fig.width=12}
 
 section_title <- 
   c("雇用に期間がある割合(上が無期)",
     "Log wage",
     "時給(円)",
-    "「正規雇用」の割合")
+    "「正規雇用」の割合",
+    "仕事がレベルアップした",
+    "仕事に満足している",
+    "生活に満足している",
+    "気が張りつめている",
+    "ゆううつである",
+    "将来の見通しがついている"
+    )
+
+list_CSplots3 <- map(list_results3, function(result) {
+  plot <- ggdid(result)
+  })
+
+## output
+walk2(list_CSplots3, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+```
+
+### Event study Results {.tabset}
+
+```{r plot3, echo=FALSE, results='asis', warning=FALSE, fig.width=8}
+
+list_aggplots3 <- map(list_aggresults3, function(aggte_result) {
+  ggdid(aggte_result, xgap = 1)
+})
+
+walk2(list_aggplots3, section_title, function(plot, title) {
+  cat("#### ", title, " \n")
+  print(plot)
+  cat(" \n\n")
+})
+
+```
+
+## Only Not Yet Treated as a Comparison
+
+### Group-Time Treatment Effect {.tabset}
+```{r gt4,echo=FALSE, results='asis', message=FALSE, warning=FALSE, fig.height=20, fig.width=12}
 
 list_CSplots4 <- map(list_results4, function(result) {
   plot <- ggdid(result)

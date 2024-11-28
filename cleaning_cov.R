@@ -86,8 +86,20 @@ dat_2016_cov <-
     grade_midschool = Q82,
     d_quit = Q46_1,
     q_nonreg_reg = Q46_6,
-    d_reg_nonreg = Q46_7
-  ) |> 
+    d_reg_nonreg = Q46_7,
+    year_entry_current = QN83_7,
+    month_entry_current = QN83_8,
+    
+
+    life_satisfuction = Q44,
+    mental_tension = Q50_5,
+    mental_depressed = Q50_6,
+    job_levelup = Q53,
+    job_variation = Q58_1,
+    job_satisfuction = Q59_1,
+    career_perspective = Q59_4,
+    
+  ) |>
   mutate(
     coarse_industry = case_when(
       industry == 1 ~ 1,
@@ -110,8 +122,18 @@ dat_2016_cov <-
       industry >= 64 & industry <= 65 | industry == 60 ~ 18,
       industry == 66 ~ 19,
       industry == 67 ~ 20, 
-    )
-  )
+    ),
+    life_satisfuction = if_else(life_satisfuction <= 2, 1, 0),
+    mental_tension = if_else(mental_tension >= 4, 1, 0),
+    mental_depressed = if_else(mental_depressed >= 4, 1, 0),
+    job_levelup = case_when(job_levelup <= 2 ~ 1,
+                            job_levelup >= 3 & job_levelup <= 5 ~ 0,
+                            job_levelup == 6 ~ NA),
+    job_variation = if_else(job_variation <= 2, 1, 0),
+    job_satisfuction = if_else(job_satisfuction <= 2, 1, 0),
+    career_perspective = if_else(career_perspective <= 2, 1, 0)
+  ) 
+  
            
 
 dat_2017_cov <-
@@ -142,7 +164,18 @@ dat_2017_cov <-
     grade_midschool = Y17_BQ89,
     d_quit = Y17_Q50_1,
     q_nonreg_reg = Y17_Q51_5,
-    d_reg_nonreg = Y17_Q51_5
+    d_reg_nonreg = Y17_Q51_5,
+    year_entry_current = Y17_QN90_11,
+    month_entry_current =Y17_QN90_12,
+    
+    life_satisfuction = Y17_Q48,
+    mental_tension = Y17_Q55_5,
+    mental_depressed = Y17_Q55_6,
+    job_levelup = Y17_Q58,
+    job_variation = Y17_Q63_1,
+    job_satisfuction = Y17_Q64_1,
+    career_perspective = Y17_Q64_4
+    
   )|> 
   mutate(
     coarse_industry = case_when(
@@ -166,7 +199,16 @@ dat_2017_cov <-
       industry >= 64 & industry <= 65 | industry == 60 ~ 18,
       industry == 66 ~ 19,
       industry == 67 ~ 20, 
-    )
+    ),
+    life_satisfuction = if_else(life_satisfuction <= 2, 1, 0),
+    mental_tension = if_else(mental_tension >= 4, 1, 0),
+    mental_depressed = if_else(mental_depressed >= 4, 1, 0),
+    job_levelup = case_when(job_levelup <= 2 ~ 1,
+                            job_levelup >= 3 & job_levelup <= 5 ~ 0,
+                            job_levelup == 6 ~ NA),
+    job_variation = if_else(job_variation <= 2, 1, 0),
+    job_satisfuction = if_else(job_satisfuction <= 2, 1, 0),
+    career_perspective = if_else(career_perspective <= 2, 1, 0)
   )
 
 dat_2018_cov <-
@@ -197,7 +239,18 @@ dat_2018_cov <-
     grade_midschool = Y18_BQ96,
     d_quit = Y18_Q55_1,
     q_nonreg_reg = Y18_Q56_1,
-    d_reg_nonreg = Y18_Q56_2
+    d_reg_nonreg = Y18_Q56_2,
+    year_entry_current = Y18_QN97_11,
+    month_entry_current =Y18_QN97_12,
+    
+    life_satisfuction = Y18_Q53,
+    mental_tension = Y18_Q60_5,
+    mental_depressed = Y18_Q60_6,
+    job_levelup = Y18_Q63,
+    job_variation = Y18_Q68_1,
+    job_satisfuction = Y18_Q69_1,
+    career_perspective = Y18_Q69_4
+    
   )|> 
   mutate(
     coarse_industry = case_when(
@@ -221,7 +274,16 @@ dat_2018_cov <-
       industry >= 64 & industry <= 65 | industry == 60 ~ 18,
       industry == 66 ~ 19,
       industry == 67 ~ 20, 
-    )
+    ),
+    life_satisfuction = if_else(life_satisfuction <= 2, 1, 0),
+    mental_tension = if_else(mental_tension >= 4, 1, 0),
+    mental_depressed = if_else(mental_depressed >= 4, 1, 0),
+    job_levelup = case_when(job_levelup <= 2 ~ 1,
+                            job_levelup >= 3 & job_levelup <= 5 ~ 0,
+                            job_levelup == 6 ~ NA),
+    job_variation = if_else(job_variation <= 2, 1, 0),
+    job_satisfuction = if_else(job_satisfuction <= 2, 1, 0),
+    career_perspective = if_else(career_perspective <= 2, 1, 0)
   )
 
 dat_2019_cov <-
@@ -253,7 +315,18 @@ dat_2019_cov <-
     regular_same = Y19_Q70_7,
     d_quit = Y19_Q59_1,
     q_nonreg_reg = Y19_Q59_5,
-    d_reg_nonreg = Y19_Q59_6
+    d_reg_nonreg = Y19_Q59_6,
+    year_entry_current = Y19_QN99_11,
+    month_entry_current =Y19_QN99_12,
+    
+    life_satisfuction = Y19_Q57,
+    mental_tension = Y19_Q63_5,
+    mental_depressed = Y19_Q63_6,
+    job_levelup = Y19_Q66,
+    job_variation = Y19_Q71_1,
+    job_satisfuction = Y19_Q72_1,
+    career_perspective = Y19_Q72_4
+    
   )|> 
   mutate(
     coarse_industry = case_when(
@@ -277,7 +350,16 @@ dat_2019_cov <-
       industry >= 64 & industry <= 65 | industry == 60 ~ 18,
       industry == 66 ~ 19,
       industry == 67 ~ 20, 
-    )
+    ),
+    life_satisfuction = if_else(life_satisfuction <= 2, 1, 0),
+    mental_tension = if_else(mental_tension >= 4, 1, 0),
+    mental_depressed = if_else(mental_depressed >= 4, 1, 0),
+    job_levelup = case_when(job_levelup <= 2 ~ 1,
+                            job_levelup >= 3 & job_levelup <= 5 ~ 0,
+                            job_levelup == 6 ~ NA),
+    job_variation = if_else(job_variation <= 2, 1, 0),
+    job_satisfuction = if_else(job_satisfuction <= 2, 1, 0),
+    career_perspective = if_else(career_perspective <= 2, 1, 0)
   )
 
 dat_2020_cov <-
@@ -309,7 +391,18 @@ dat_2020_cov <-
     regular_same = y20_q64_7,
     d_quit = y20_q53_1,
     q_nonreg_reg = y20_q53_5,
-    d_reg_nonreg = y20_q53_6
+    d_reg_nonreg = y20_q53_6,
+    year_entry_current = y20_qn93_11,
+    month_entry_current = y20_qn93_12,
+    
+    life_satisfuction = y20_q51,
+    mental_tension = y20_q57_5,
+    mental_depressed = y20_q57_6,
+    job_levelup = y20_q60,
+    job_variation = y20_q65_1,
+    job_satisfuction = y20_q66_1,
+    career_perspective = y20_q66_4
+    
   )|> 
   mutate(
     coarse_industry = case_when(
@@ -333,7 +426,16 @@ dat_2020_cov <-
       industry >= 64 & industry <= 65 | industry == 60 ~ 18,
       industry == 66 ~ 19,
       industry == 67 ~ 20, 
-    )
+    ),
+    life_satisfuction = if_else(life_satisfuction <= 2, 1, 0),
+    mental_tension = if_else(mental_tension >= 4, 1, 0),
+    mental_depressed = if_else(mental_depressed >= 4, 1, 0),
+    job_levelup = case_when(job_levelup <= 2 ~ 1,
+                            job_levelup >= 3 & job_levelup <= 5 ~ 0,
+                            job_levelup == 6 ~ NA),
+    job_variation = if_else(job_variation <= 2, 1, 0),
+    job_satisfuction = if_else(job_satisfuction <= 2, 1, 0),
+    career_perspective = if_else(career_perspective <= 2, 1, 0)
   )
 
 dat_2021_cov <-
@@ -364,7 +466,18 @@ dat_2021_cov <-
     grade_midschool = y21_bq98,
     d_quit = y21_q59_1,
     q_nonreg_reg = y21_q59_5,
-    d_reg_nonreg = y21_q59_6
+    d_reg_nonreg = y21_q59_6,
+    year_entry_current = y21_qn99_11,
+    month_entry_current = y21_qn99_12,
+    
+    life_satisfuction = y21_q57,
+    mental_tension = y21_q63_5,
+    mental_depressed = y21_q63_6,
+    job_levelup = y21_q66,
+    job_variation = y21_q71_1,
+    job_satisfuction = y21_q72_1,
+    career_perspective = y21_q72_4
+    
   )|> 
   mutate(
     coarse_industry = case_when(
@@ -388,7 +501,16 @@ dat_2021_cov <-
       industry >= 64 & industry <= 65 | industry == 60 ~ 18,
       industry == 66 ~ 19,
       industry == 67 ~ 20, 
-    )
+    ),
+    life_satisfuction = if_else(life_satisfuction <= 2, 1, 0),
+    mental_tension = if_else(mental_tension >= 4, 1, 0),
+    mental_depressed = if_else(mental_depressed >= 4, 1, 0),
+    job_levelup = case_when(job_levelup <= 2 ~ 1,
+                            job_levelup >= 3 & job_levelup <= 5 ~ 0,
+                            job_levelup == 6 ~ NA),
+    job_variation = if_else(job_variation <= 2, 1, 0),
+    job_satisfuction = if_else(job_satisfuction <= 2, 1, 0),
+    career_perspective = if_else(career_perspective <= 2, 1, 0)
   )
 
 dat_2022_cov <-
@@ -419,7 +541,18 @@ dat_2022_cov <-
     grade_midschool = y22_bq98,
     d_quit = y22_q57_1,
     q_nonreg_reg = y22_q57_5,
-    d_reg_nonreg = y22_q57_6
+    d_reg_nonreg = y22_q57_6,
+    year_entry_current = y22_qn99_11,
+    month_entry_current = y22_qn99_12,
+    
+    life_satisfuction = y22_q55,
+    mental_tension = y22_q61_5,
+    mental_depressed = y22_q61_6,
+    job_levelup = y22_q64,
+    job_variation = y22_q69_1,
+    job_satisfuction = y22_q70_1,
+    career_perspective = y22_q70_4
+    
   )|> 
   mutate(
     coarse_industry = case_when(
@@ -443,7 +576,16 @@ dat_2022_cov <-
       industry >= 64 & industry <= 65 | industry == 60 ~ 18,
       industry == 66 ~ 19,
       industry == 67 ~ 20, 
-    )
+    ),
+    life_satisfuction = if_else(life_satisfuction <= 2, 1, 0),
+    mental_tension = if_else(mental_tension >= 4, 1, 0),
+    mental_depressed = if_else(mental_depressed >= 4, 1, 0),
+    job_levelup = case_when(job_levelup <= 2 ~ 1,
+                            job_levelup >= 3 & job_levelup <= 5 ~ 0,
+                            job_levelup == 6 ~ NA),
+    job_variation = if_else(job_variation <= 2, 1, 0),
+    job_satisfuction = if_else(job_satisfuction <= 2, 1, 0),
+    career_perspective = if_else(career_perspective <= 2, 1, 0)
   )
 
 dat_2023_cov <-
@@ -476,7 +618,18 @@ dat_2023_cov <-
     grade_midschool = y23_bq97,
     d_quit = y23_q57_1,
     q_nonreg_reg = y23_q57_5,
-    d_reg_nonreg = y23_q57_6
+    d_reg_nonreg = y23_q57_6,
+    year_entry_current = y23_qn98_11,
+    month_entry_current = y23_qn98_12,
+    
+    life_satisfuction = y23_q55,
+    mental_tension = y23_q61_5,
+    mental_depressed = y23_q61_6,
+    job_levelup = y23_q64,
+    job_variation = y23_q70_1,
+    job_satisfuction = y23_q71_1,
+    career_perspective = y23_q71_4
+    
   )|> 
   mutate(
     coarse_industry = case_when(
@@ -499,7 +652,16 @@ dat_2023_cov <-
       industry >= 71 & industry <= 73 | industry == 65 ~ 18,
       industry == 74 | industry == 75 ~ 19,
       industry == 76 ~ 20,  ##
-    )
+    ),
+    life_satisfuction = if_else(life_satisfuction <= 2, 1, 0),
+    mental_tension = if_else(mental_tension >= 4, 1, 0),
+    mental_depressed = if_else(mental_depressed >= 4, 1, 0),
+    job_levelup = case_when(job_levelup <= 2 ~ 1,
+                            job_levelup >= 3 & job_levelup <= 5 ~ 0,
+                            job_levelup == 6 ~ NA),
+    job_variation = if_else(job_variation <= 2, 1, 0),
+    job_satisfuction = if_else(job_satisfuction <= 2, 1, 0),
+    career_perspective = if_else(career_perspective <= 2, 1, 0)
   )
 
 ## cleaning data
@@ -736,6 +898,19 @@ dat_cov <-
             dat_2021_cov,
             dat_2022_cov,
             dat_2023_cov
+  )
+
+dat_cov <- 
+  dat_cov |> 
+  filter(year_entry_current < 99999,
+         month_entry_current < 999)
+
+dat_cov <- dat_cov |> 
+  fastDummies::dummy_cols(
+    select_columns = "year_entry_current",
+    remove_first_dummy = FALSE,
+    ignore_na = TRUE,
+    split = FALSE
   )
 
 write_csv(dat_cov, file = here::here("../masters_thesis/data/panel/dat_panel_cov.csv"))
